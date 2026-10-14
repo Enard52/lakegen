@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from lakegen.agent import StopReason
 from lakegen.api.run.runner import AgentEventType
+from lakegen.core.config import DEFAULT_MODEL, get_default_model
 from lakegen.core.error.code import ErrorCode
 
 
@@ -52,7 +53,10 @@ class SessionResponse(APIModel):
 class TurnRequest(APIModel):
     text: str = Field(min_length=1)
     catalog_name: str | None = None
-    model: str = Field(default="openrouter/free")
+    model: str = Field(
+        default_factory=get_default_model,
+        json_schema_extra={"default": DEFAULT_MODEL},
+    )
     provider: str = Field(default="openai")
 
 

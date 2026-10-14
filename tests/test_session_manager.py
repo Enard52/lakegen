@@ -674,3 +674,30 @@ def test_delete_blocks_spawn_and_send_before_deleting_rows(registered_catalog):
     release_delete.set()
     deleter.join(timeout=2)
     assert not deleter.is_alive()
+
+
+def test_default_agent_config_model_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    from lakegen.session.manager import _default_agent_config
+
+    monkeypatch.delenv("OPENAI_MODEL", raising=False)
+    config = _default_agent_config()
+    assert config.model == "gpt-4o-mini"
+    assert config.provider == "openai"
+
+
+def test_default_agent_config_model_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    from lakegen.session.manager import _default_agent_config
+
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-4o")
+    config = _default_agent_config()
+    assert config.model == "gpt-4o"
+    assert config.provider == "openai"
+
+
+def test_session_creation_uses_default_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENAI_MODEL", "custom-openai-model")
+    mgr = SessionManager(env=_env())
+    session_id = mgr.create(owner_id=_OWNER)
+    session = mgr.get(session_id)
+    assert session.state.config.model == "custom-openai-model"
+    assert session.state.config.provider == "openai"

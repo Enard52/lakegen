@@ -15,9 +15,10 @@ from lakegen.session.environment import Environment
 from lakegen.session.model import AgentTurnInfo, SessionInfo, SessionState
 from lakegen.session.session import Session
 from lakegen.prompt import SYSTEM_PROMPT as _DEFAULT_SYSTEM_PROMPT
+from lakegen.core.config import DEFAULT_MODEL, get_default_model
 
 
-_DEFAULT_MODEL = "openrouter/free"
+_DEFAULT_MODEL = DEFAULT_MODEL
 _DEFAULT_PROVIDER = "openai"
 _DEFAULT_MAX_TURNS = 10
 _SESSION_PAGE_SIZE = 10
@@ -27,7 +28,7 @@ _DEFAULT_HYDRATE_TURN_LIMIT = 20
 
 def _default_agent_config() -> AgentConfig:
     return AgentConfig(
-        model=_DEFAULT_MODEL,
+        model=get_default_model(),
         system_prompt=_DEFAULT_SYSTEM_PROMPT,
         provider=_DEFAULT_PROVIDER,
         max_turns=_DEFAULT_MAX_TURNS,
