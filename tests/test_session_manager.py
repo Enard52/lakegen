@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from lakegen.agent import AgentConfig
+from lakegen.core.config import EnvConfig
 from lakegen.core.error.base import BaseError
 from lakegen.core.error.code import ErrorCode
 from lakegen.core.persistence import PostgresPersistence
@@ -676,22 +677,24 @@ def test_delete_blocks_spawn_and_send_before_deleting_rows(registered_catalog):
     assert not deleter.is_alive()
 
 
-def test_default_agent_config_model_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
-    from lakegen.session.manager import _default_agent_config
+def test_create_uses_injected_env_config() -> None:
+    config = EnvConfig(base_url=None, model="injected-model", provider="openai")
+    mgr = SessionManager(env=_env(), config=config)
 
+    session = mgr.get(mgr.create(owner_id=_OWNER))
+
+    assert session.state.config.model == "injected-model"
+    assert session.state.config.provider == "openai"
+
+
+def test_create_falls_back_to_default_model(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OPENAI_MODEL", raising=False)
-    config = _default_agent_config()
-    assert config.model == "gpt-4o-mini"
-    assert config.provider == "openai"
+    mgr = SessionManager(env=_env())
 
+    session = mgr.get(mgr.create(owner_id=_OWNER))
 
-def test_default_agent_config_model_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    from lakegen.session.manager import _default_agent_config
-
-    monkeypatch.setenv("OPENAI_MODEL", "gpt-4o")
-    config = _default_agent_config()
-    assert config.model == "gpt-4o"
-    assert config.provider == "openai"
+    assert session.state.config.model == "gpt-4o-mini"
+    assert session.state.config.provider == "openai"
 
 
 def test_session_creation_uses_default_model(monkeypatch: pytest.MonkeyPatch) -> None:
