@@ -5,11 +5,18 @@ import uuid
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from lakegen.agent import AgentConfig, AgentLoop, AgentLoopFailure, AgentLoopResult
+from lakegen.agent import (
+    AgentConfig,
+    AgentLoop,
+    AgentLoopFailure,
+    AgentLoopResult,
+    Conversation
+)
 from lakegen.agent.serialization import serialize_agent_loop_result
 from lakegen.core.error.base import BaseError
 from lakegen.core.error.code import ErrorCode
-from lakegen.inference import StreamChunk
+from lakegen.inference import StreamChunk, Role, Message
+from lakegen.session.compaction import compact
 from lakegen.session.environment import Environment
 from lakegen.session.model import SessionState, SessionTurnResult
 from lakegen.tool import ToolRuntime
@@ -144,6 +151,40 @@ class Session:
                     ) from None
 
                 self._persist_and_commit_turn(turn_id, loop_result)
+
+                try:
+                    # Copy state before mutating
+                    state_copy = self.state.messages.messages
+
+                    # Run compaction if required
+                    if self._check_if_compaction_needed():
+                        print("Compacting..............")
+                        compaction_result = compact(
+                            inference_router=self.env.inference_router,
+                            provider=provider if provider is not None else base.provider,
+                            model=model if model is not None else base.model,
+                            conversation=self.state.messages,
+                        )
+                        
+                        if compaction_result.content.strip():
+                            # Replace context with compacted summary
+                            self.state.messages.messages = [compaction_result]
+
+                            # Persist in database
+                            self._persist_and_commit_compaction(
+                                compaction_id=str(uuid.uuid4()),
+                                compacted_data=compaction_result.content,
+                                last_compacted_turn_id=turn_id,
+                            )
+
+                        del state_copy
+
+                except Exception:
+                    # TODO: Logging — compaction must not fail a successful turn.
+                    self.state.messages.messages = state_copy
+                    del state_copy
+
+                
                 return SessionTurnResult(id=turn_id, result=loop_result)
         finally:
             if self._manager is not None:
@@ -163,6 +204,21 @@ class Session:
         )
         self.state.messages.messages.extend(loop_result.turn_messages.messages)
 
+    def _persist_and_commit_compaction(
+        self,
+        compaction_id: str,
+        compacted_data: str,
+        last_compacted_turn_id: str,
+    ) -> None:
+        self.env.compaction_repository.create(
+            {
+                "id": compaction_id,
+                "data": compacted_data,
+                "session_id": self.id,
+                "last_compacted_turn_id": last_compacted_turn_id,
+            }
+        )
+
     def spawn(self, config: AgentConfig) -> str:
         """Create a child session that shares this session's Environment.
 
@@ -180,6 +236,18 @@ class Session:
             owner_id=self.state.owner_id,
             parent_id=self.id,
         )
+
+    def _check_if_compaction_needed(self) -> bool:
+        char_count = 0
+        for msg in self.state.messages.messages:
+            content = msg.content or ""
+            if msg.role == Role.TOOL:
+                continue
+            if msg.role == Role.ASSISTANT and len(content) < 1:
+                continue
+            char_count += len(content)
+        token_count = char_count // 4 # Assuming ~4 chars as one token
+        return token_count > self.env.token_budget.conversation * 0.7
 
     def close(self) -> bool:
         """Close the session and return whether it was already closed."""

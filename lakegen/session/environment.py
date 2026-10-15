@@ -9,6 +9,10 @@ from lakegen.core.persistence.repository.agent_turn_repository import (
     AgentTurnRepository,
     agent_turn_repository,
 )
+from lakegen.core.persistence.repository.compaction_repository import (
+    CompactionRepository,
+    compaction_repository,
+)
 from lakegen.core.persistence.repository.session_repository import (
     SessionRepository,
     session_repository,
@@ -23,6 +27,16 @@ from lakegen.tool import (
     ToolRegistry,
     registry as tool_reg,
 )
+from lakegen.session.model import TokenBudget
+
+
+def calculate_token_budget(total_budget: int = 1_000) -> TokenBudget:
+    return TokenBudget(
+        total=total_budget,
+        system_prompt=int(total_budget * 0.1),
+        tool_definitions=int(total_budget * 0.1),
+        conversation=int(total_budget * 0.8),
+    )
 
 @dataclass(frozen=True)
 class Environment:
@@ -33,6 +47,8 @@ class Environment:
     persistence: PostgresPersistence
     session_repository: SessionRepository
     agent_turn_repository: AgentTurnRepository
+    compaction_repository: CompactionRepository
+    token_budget: TokenBudget
 
     @classmethod
     def default(cls) -> "Environment":
@@ -44,4 +60,6 @@ class Environment:
             persistence_def,
             session_repository,
             agent_turn_repository,
+            compaction_repository,
+            calculate_token_budget(),
         )

@@ -13,7 +13,7 @@ from lakegen.session.cache import SessionCache
 from lakegen.session.environment import Environment
 from lakegen.session.model import AgentTurnInfo, SessionInfo, SessionState
 from lakegen.session.session import Session
-from lakegen.prompt import PROMPT as _DEFAULT_SYSTEM_PROMPT
+from lakegen.prompt import SYSTEM_PROMPT as _DEFAULT_SYSTEM_PROMPT
 
 
 _DEFAULT_MODEL = "openrouter/free"

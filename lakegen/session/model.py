@@ -36,3 +36,11 @@ class AgentTurnInfo:
     id: str
     created_at: datetime
     result: dict[str, object]
+
+
+@dataclass(frozen=True)
+class TokenBudget:
+    total: int
+    system_prompt: int
+    tool_definitions: int
+    conversation: int

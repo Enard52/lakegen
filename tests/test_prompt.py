@@ -7,16 +7,16 @@ from unittest.mock import MagicMock
 from lakegen.agent.loop import AgentLoop
 from lakegen.agent.model import AgentConfig, Conversation
 from lakegen.inference.model import StreamChunk
-from lakegen.prompt import PROMPT
-from lakegen.prompt.system_prompt import PROMPT as SYSTEM_PROMPT
+from lakegen.prompt import SYSTEM_PROMPT
+from lakegen.prompt.system import PROMPT as SYSTEM_PROMPT_MODULE
 from lakegen.session import Environment, SessionManager
 from lakegen.tool.runtime import ToolRuntime
 
 
 def test_prompt_reexported_from_package():
-    assert PROMPT is SYSTEM_PROMPT
-    assert "LakeGen" in PROMPT
-    assert "Iceberg" in PROMPT
+    assert SYSTEM_PROMPT is SYSTEM_PROMPT_MODULE
+    assert "LakeGen" in SYSTEM_PROMPT
+    assert "Iceberg" in SYSTEM_PROMPT
 
 
 def test_build_prompt_composes_identity_and_catalog():
@@ -90,4 +90,4 @@ def test_session_default_config_uses_product_prompt():
     from tests.conftest import open_session
 
     session = open_session(mgr, owner_id="user-1", catalog_name="prod")
-    assert session.state.config.system_prompt == PROMPT
+    assert session.state.config.system_prompt == SYSTEM_PROMPT
