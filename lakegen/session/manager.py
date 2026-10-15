@@ -14,24 +14,13 @@ from lakegen.session.environment import Environment
 from lakegen.session.model import AgentTurnInfo, SessionInfo, SessionState
 from lakegen.session.session import Session
 from lakegen.prompt import PROMPT as _DEFAULT_SYSTEM_PROMPT
-from lakegen.core.config import DEFAULT_MODEL, get_default_model
+from lakegen.core.config import EnvConfig
 
 
-_DEFAULT_MODEL = DEFAULT_MODEL
-_DEFAULT_PROVIDER = "openai"
 _DEFAULT_MAX_TURNS = 10
 _SESSION_PAGE_SIZE = 10
 _DEFAULT_CACHE_SIZE = 32
 _DEFAULT_HYDRATE_TURN_LIMIT = 20
-
-
-def _default_agent_config() -> AgentConfig:
-    return AgentConfig(
-        model=get_default_model(),
-        system_prompt=_DEFAULT_SYSTEM_PROMPT,
-        provider=_DEFAULT_PROVIDER,
-        max_turns=_DEFAULT_MAX_TURNS,
-    )
 
 
 def _int_env(name: str, default: int) -> int:
@@ -51,10 +40,12 @@ class SessionManager:
         self,
         env: Environment | None = None,
         *,
+        config: EnvConfig | None = None,
         cache_size: int | None = None,
         hydrate_turn_limit: int | None = None,
     ) -> None:
         self.env = env if env is not None else Environment.default()
+        self.config = config if config is not None else EnvConfig.from_env()
         self._cache = SessionCache(
             cache_size if cache_size is not None else _int_env(
                 "LAKEGEN_SESSION_CACHE_SIZE",
@@ -74,6 +65,14 @@ class SessionManager:
         self._lock = threading.Lock()
         if self.env.persistence.configured:
             self.env.persistence.ensure_schema()
+
+    def _default_agent_config(self) -> AgentConfig:
+        return AgentConfig(
+            model=self.config.model,
+            system_prompt=_DEFAULT_SYSTEM_PROMPT,
+            provider=self.config.provider,
+            max_turns=_DEFAULT_MAX_TURNS,
+        )
 
     def pin_session(self, session_id: str, session: Session | None = None) -> None:
         with self._lock:
@@ -110,7 +109,7 @@ class SessionManager:
         inherit the parent's active catalog.
         """
         if config is None:
-            config = _default_agent_config()
+            config = self._default_agent_config()
 
         with self._lock:
             if parent_id is not None and parent_id in self._deleting:
@@ -288,7 +287,7 @@ class SessionManager:
         messages = conversation_from_turn_rows(turn_rows)
         state = SessionState(
             id=session_id,
-            config=_default_agent_config(),
+            config=self._default_agent_config(),
             owner_id=str(row["owner_id"]),
             catalog_name=self._optional_catalog_name(row),
             created_at=self._created_at(row),
