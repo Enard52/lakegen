@@ -32,4 +32,6 @@ def compact(
             return Message(role=Role.USER, content="")
         if chunk.text:
             text_parts.append(chunk.text)
+    if cancel_event.is_set():
+        return Message(role=Role.USER, content="")
     return Message(role=Role.USER, content="".join(text_parts))
