@@ -283,6 +283,11 @@ class SessionManager:
         compactions = self.env.compaction_repository.list(session_id, 0, 1)
         if isinstance(compactions, list) and len(compactions) > 0:
             latest_compaction = compactions[0]
+
+            # TODO: Currently `created_at` is being used as the replay
+            ## cutoff because `last_compacted_turn_id` is UUID which
+            ## has no chronology. Fine temporarily but this needs to
+            ## be fixed.
             last_turn_created_at = latest_compaction.get("created_at")
             turn_rows = self.env.agent_turn_repository.list_where(
                 session_id,

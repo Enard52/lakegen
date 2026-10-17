@@ -2,6 +2,8 @@ from lakegen.prompt import COMPACTION_PROMPT
 from lakegen.inference import Router
 from lakegen.inference.model import ChatRequest, Message, Role
 from lakegen.agent import Conversation
+
+import threading
  
 
 def compact(
@@ -9,37 +11,25 @@ def compact(
     provider: str,
     model: str,
     conversation: Conversation,
+    cancel_event: threading.Event,
 ) -> Message:
-    role_conversation = remove_tool_calls_from_conversation(conversation)
-    role_conversation.messages.append(
-        Message(
-            role=Role.USER,
-            content="Now write the compacted summary of the conversation above.",
-        )
-    )
+    compact_instruction="Now write the compacted summary of the conversation above."
     request = ChatRequest(
         model=model,
         system_prompt=COMPACTION_PROMPT,
-        messages=role_conversation.messages,
+        messages=[
+            *conversation.messages,
+            Message(role=Role.USER,content=compact_instruction)
+        ],
         tools=[],
     )
-    response = inference_router.complete(provider, request)
-    return Message(
-        role=Role.USER,
-        content=response.message.content or ""
-    )
-
-
-def remove_tool_calls_from_conversation(conversation: Conversation) -> Conversation:
-    stripped: list[Message] = []
-    for msg in conversation.messages:
-        if msg.role == Role.TOOL:
-            continue
-        if (
-            msg.role == Role.ASSISTANT
-            and msg.tool_calls
-            and not (msg.content or "").strip()
-        ):
-            continue
-        stripped.append(Message(role=msg.role, content=msg.content))
-    return Conversation(messages=stripped)
+        
+    # stream() wires into OpenAI's waiter thread and
+    ## aborts the socket immediately on cancel_event
+    text_parts: list[str] = []
+    for chunk in inference_router.stream(provider, request, cancel_event=cancel_event):
+        if cancel_event.is_set():
+            return Message(role=Role.USER, content="")
+        if chunk.text:
+            text_parts.append(chunk.text)
+    return Message(role=Role.USER, content="".join(text_parts))

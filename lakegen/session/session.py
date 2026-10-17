@@ -164,6 +164,11 @@ class Session:
                             provider=provider if provider is not None else base.provider,
                             model=compaction_model,
                             conversation=self.state.messages,
+                            cancel_event=(
+                                cancel_event
+                                if cancel_event is not None
+                                else threading.Event()
+                            ),
                         )
 
                         if compaction_result.content.strip():
