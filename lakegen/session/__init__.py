@@ -5,8 +5,10 @@ from lakegen.session.model import (
     SessionInfo,
     SessionState,
     SessionTurnResult,
+    TokenBudget,
 )
 from lakegen.session.session import Session
+from lakegen.session.compaction import compact
 
 __all__ = [
     "AgentTurnInfo",
@@ -16,4 +18,6 @@ __all__ = [
     "SessionManager",
     "SessionState",
     "SessionTurnResult",
+    "TokenBudget",
+    "compact",
 ]

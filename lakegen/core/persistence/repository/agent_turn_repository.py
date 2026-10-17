@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections.abc import Mapping
 
 from psycopg.errors import UniqueViolation
@@ -62,6 +64,29 @@ class AgentTurnRepository(Repository):
             """,
             (identifier, offset, limit),
         )
+
+    def list_where(
+        self,
+        identifier: str,
+        condition: str,
+        params: tuple[object, ...] = (),
+        offset: int = 0,
+        limit: int | None = None,
+    ) -> list[dict[str, object]]:
+        query = f"""
+            SELECT id, result, created_at
+            FROM agent_turns
+            WHERE session_id = %s AND ({condition})
+            ORDER BY created_at DESC, id DESC
+        """
+        all_params: list[object] = [identifier, *params]
+        if offset > 0:
+            query += " OFFSET %s"
+            all_params.append(offset)
+        if limit is not None:
+            query += " LIMIT %s"
+            all_params.append(limit)
+        return self._database.fetch_all(query, tuple(all_params))
 
     def exists(self, identifier: str) -> bool:
         if not identifier:

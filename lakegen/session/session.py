@@ -1,15 +1,22 @@
 from __future__ import annotations
 
+import os
 import threading
 import uuid
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from lakegen.agent import AgentConfig, AgentLoop, AgentLoopFailure, AgentLoopResult
+from lakegen.agent import (
+    AgentConfig,
+    AgentLoop,
+    AgentLoopFailure,
+    AgentLoopResult,
+)
 from lakegen.agent.serialization import serialize_agent_loop_result
 from lakegen.core.error.base import BaseError
 from lakegen.core.error.code import ErrorCode
 from lakegen.inference import StreamChunk
+from lakegen.session.compaction import compact
 from lakegen.session.environment import Environment
 from lakegen.session.model import SessionState, SessionTurnResult
 from lakegen.tool import ToolRuntime
@@ -144,6 +151,46 @@ class Session:
                     ) from None
 
                 self._persist_and_commit_turn(turn_id, loop_result)
+
+                try:
+                    state_copy = list(self.state.messages.messages)
+
+                    # Run compaction if required
+                    if self._check_if_compaction_needed():
+                        # Run compaction with the compaction model, defaulting to the base model if not set
+                        compaction_model = os.getenv("COMPACTION_MODEL", None) or base.model
+                        compaction_result = compact(
+                            inference_router=self.env.inference_router,
+                            provider=provider if provider is not None else base.provider,
+                            model=compaction_model,
+                            conversation=self.state.messages,
+                            cancel_event=(
+                                cancel_event
+                                if cancel_event is not None
+                                else threading.Event()
+                            ),
+                        )
+
+                        if compaction_result.content.strip():
+                            # Replace context with compacted summary
+                            self.state.messages.messages = [compaction_result]
+
+                            # Persist in database
+                            self._persist_and_commit_compaction(
+                                compaction_id=str(uuid.uuid4()),
+                                compacted_data=compaction_result.content,
+                                last_compacted_turn_id=turn_id,
+                            )
+
+                except Exception:
+                    # TODO(compaction observability): this swallows every
+                    # compaction failure so it can't break an otherwise-successful
+                    # turn, which also hides the cause — e.g. the OpenAI provider
+                    # 400s when `tools` is sent as null, silently disabling
+                    # compaction, and an empty summary is dropped by the guard
+                    # above. Log the exception and emit a metric in a follow-up PR.
+                    self.state.messages.messages = state_copy
+
                 return SessionTurnResult(id=turn_id, result=loop_result)
         finally:
             if self._manager is not None:
@@ -163,6 +210,21 @@ class Session:
         )
         self.state.messages.messages.extend(loop_result.turn_messages.messages)
 
+    def _persist_and_commit_compaction(
+        self,
+        compaction_id: str,
+        compacted_data: str,
+        last_compacted_turn_id: str,
+    ) -> None:
+        self.env.compaction_repository.create(
+            {
+                "id": compaction_id,
+                "data": compacted_data,
+                "session_id": self.id,
+                "last_compacted_turn_id": last_compacted_turn_id,
+            }
+        )
+
     def spawn(self, config: AgentConfig) -> str:
         """Create a child session that shares this session's Environment.
 
@@ -180,6 +242,14 @@ class Session:
             owner_id=self.state.owner_id,
             parent_id=self.id,
         )
+
+    def _check_if_compaction_needed(self) -> bool:
+        # Count all message text (including tool output) as ~4 chars/token.
+        char_count = sum(
+            len(msg.content or "") for msg in self.state.messages.messages
+        )
+        token_count = char_count // 4  # Assuming ~4 chars as one token
+        return token_count > self.env.token_budget.conversation * 0.7
 
     def close(self) -> bool:
         """Close the session and return whether it was already closed."""

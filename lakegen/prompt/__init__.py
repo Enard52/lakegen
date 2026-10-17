@@ -1,5 +1,7 @@
-from lakegen.prompt.system_prompt import PROMPT
+from lakegen.prompt.system import PROMPT as SYSTEM_PROMPT
+from lakegen.prompt.compaction import PROMPT as COMPACTION_PROMPT
 
 __all__ = [
-    "PROMPT"
+    "SYSTEM_PROMPT",
+    "COMPACTION_PROMPT"
 ]

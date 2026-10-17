@@ -46,6 +46,8 @@ def _env(agent_turn_repository=None):
     catalogs.require.side_effect = require
     persistence = MagicMock(spec=PostgresPersistence)
     persistence.configured = False
+    compaction_repository = MagicMock()
+    compaction_repository.list.return_value = []
     return replace(
         Environment.default(),
         catalog_service=catalogs,
@@ -56,6 +58,7 @@ def _env(agent_turn_repository=None):
             if agent_turn_repository is not None
             else MagicMock()
         ),
+        compaction_repository=compaction_repository,
     )
 
 
