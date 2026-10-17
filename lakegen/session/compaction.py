@@ -11,6 +11,12 @@ def compact(
     conversation: Conversation,
 ) -> Message:
     role_conversation = remove_tool_calls_from_conversation(conversation)
+    role_conversation.messages.append(
+        Message(
+            role=Role.USER,
+            content="Now write the compacted summary of the conversation above.",
+        )
+    )
     request = ChatRequest(
         model=model,
         system_prompt=COMPACTION_PROMPT,

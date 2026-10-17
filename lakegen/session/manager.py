@@ -5,10 +5,11 @@ import threading
 import uuid
 from datetime import datetime
 
-from lakegen.agent import AgentConfig
+from lakegen.agent import AgentConfig, Conversation
 from lakegen.agent.serialization import conversation_from_turn_rows
 from lakegen.core.error.base import BaseError
 from lakegen.core.error.code import ErrorCode
+from lakegen.inference import Message, Role
 from lakegen.session.cache import SessionCache
 from lakegen.session.environment import Environment
 from lakegen.session.model import AgentTurnInfo, SessionInfo, SessionState
@@ -279,12 +280,30 @@ class SessionManager:
 
     def _hydrate(self, session_id: str) -> Session:
         row = self.env.session_repository.get(session_id)
-        turn_rows = self.env.agent_turn_repository.list(
-            session_id,
-            0,
-            self._hydrate_turn_limit,
-        )
-        messages = conversation_from_turn_rows(turn_rows)
+        compactions = self.env.compaction_repository.list(session_id, 0, 1)
+        if isinstance(compactions, list) and len(compactions) > 0:
+            latest_compaction = compactions[0]
+            last_turn_created_at = latest_compaction.get("created_at")
+            turn_rows = self.env.agent_turn_repository.list_where(
+                session_id,
+                "created_at > %s",
+                (last_turn_created_at,),
+            )
+            summary_content = latest_compaction.get("data")
+            summary_messages: list[Message] = []
+            if isinstance(summary_content, str) and summary_content.strip():
+                summary_messages.append(Message(role=Role.USER, content=summary_content))
+            messages = Conversation(
+                messages=[*summary_messages, *conversation_from_turn_rows(turn_rows).messages]
+            )
+        else:
+            turn_rows = self.env.agent_turn_repository.list(
+                session_id,
+                0,
+                self._hydrate_turn_limit,
+            )
+            messages = conversation_from_turn_rows(turn_rows)
+
         state = SessionState(
             id=session_id,
             config=_default_agent_config(),

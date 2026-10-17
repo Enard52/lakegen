@@ -30,7 +30,7 @@ from lakegen.tool import (
 from lakegen.session.model import TokenBudget
 
 
-def calculate_token_budget(total_budget: int = 1_000) -> TokenBudget:
+def calculate_token_budget(total_budget: int = 10_000) -> TokenBudget:
     return TokenBudget(
         total=total_budget,
         system_prompt=int(total_budget * 0.1),

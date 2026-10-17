@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import threading
 import uuid
 from collections.abc import Callable
@@ -10,12 +11,11 @@ from lakegen.agent import (
     AgentLoop,
     AgentLoopFailure,
     AgentLoopResult,
-    Conversation
 )
 from lakegen.agent.serialization import serialize_agent_loop_result
 from lakegen.core.error.base import BaseError
 from lakegen.core.error.code import ErrorCode
-from lakegen.inference import StreamChunk, Role, Message
+from lakegen.inference import StreamChunk
 from lakegen.session.compaction import compact
 from lakegen.session.environment import Environment
 from lakegen.session.model import SessionState, SessionTurnResult
@@ -153,19 +153,19 @@ class Session:
                 self._persist_and_commit_turn(turn_id, loop_result)
 
                 try:
-                    # Copy state before mutating
-                    state_copy = self.state.messages.messages
+                    state_copy = list(self.state.messages.messages)
 
                     # Run compaction if required
                     if self._check_if_compaction_needed():
-                        print("Compacting..............")
+                        # Run compaction with the compaction model, defaulting to the base model if not set
+                        compaction_model = os.getenv("COMPACTION_MODEL", None) or base.model
                         compaction_result = compact(
                             inference_router=self.env.inference_router,
                             provider=provider if provider is not None else base.provider,
-                            model=model if model is not None else base.model,
+                            model=compaction_model,
                             conversation=self.state.messages,
                         )
-                        
+
                         if compaction_result.content.strip():
                             # Replace context with compacted summary
                             self.state.messages.messages = [compaction_result]
@@ -177,14 +177,15 @@ class Session:
                                 last_compacted_turn_id=turn_id,
                             )
 
-                        del state_copy
-
                 except Exception:
-                    # TODO: Logging — compaction must not fail a successful turn.
+                    # TODO(compaction observability): this swallows every
+                    # compaction failure so it can't break an otherwise-successful
+                    # turn, which also hides the cause — e.g. the OpenAI provider
+                    # 400s when `tools` is sent as null, silently disabling
+                    # compaction, and an empty summary is dropped by the guard
+                    # above. Log the exception and emit a metric in a follow-up PR.
                     self.state.messages.messages = state_copy
-                    del state_copy
 
-                
                 return SessionTurnResult(id=turn_id, result=loop_result)
         finally:
             if self._manager is not None:
@@ -238,15 +239,11 @@ class Session:
         )
 
     def _check_if_compaction_needed(self) -> bool:
-        char_count = 0
-        for msg in self.state.messages.messages:
-            content = msg.content or ""
-            if msg.role == Role.TOOL:
-                continue
-            if msg.role == Role.ASSISTANT and len(content) < 1:
-                continue
-            char_count += len(content)
-        token_count = char_count // 4 # Assuming ~4 chars as one token
+        # Count all message text (including tool output) as ~4 chars/token.
+        char_count = sum(
+            len(msg.content or "") for msg in self.state.messages.messages
+        )
+        token_count = char_count // 4  # Assuming ~4 chars as one token
         return token_count > self.env.token_budget.conversation * 0.7
 
     def close(self) -> bool:

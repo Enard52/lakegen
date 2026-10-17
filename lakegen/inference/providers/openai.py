@@ -212,14 +212,19 @@ class _OpenAI:
     ) -> ChatResponse:
         """Run a non-streaming Responses API call and normalize the result."""
         try:
-            response = self._get_client().responses.create(
+            kwargs: dict[str, Any] = dict(
                 model=request.model,
                 instructions=request.system_prompt,
-                tools=self._tools_to_native(request.tools) or None,
                 input=self._message_to_native(request.messages),
                 temperature=request.temperature,
                 timeout=inactivity_timeout,
             )
+            # Omit `tools` entirely when empty: some OpenAI-compatible
+            # endpoints reject `tools: null` in a Responses API request.
+            native_tools = self._tools_to_native(request.tools)
+            if native_tools:
+                kwargs["tools"] = native_tools
+            response = self._get_client().responses.create(**kwargs)
 
             # Responses API returns a list of output items (text, tool calls, …).
             tool_calls: list[ToolCall] = []
@@ -270,15 +275,20 @@ class _OpenAI:
         done = threading.Event()
         waiter: threading.Thread | None = None
         try:
-            stream = self._get_client().responses.create(
+            kwargs: dict[str, Any] = dict(
                 model=request.model,
                 instructions=request.system_prompt,
-                tools=self._tools_to_native(request.tools) or None,
                 input=self._message_to_native(request.messages),
                 temperature=request.temperature,
                 stream=True,
                 timeout=inactivity_timeout,
             )
+            # Omit `tools` entirely when empty: some OpenAI-compatible
+            # endpoints reject `tools: null` in a Responses API request.
+            native_tools = self._tools_to_native(request.tools)
+            if native_tools:
+                kwargs["tools"] = native_tools
+            stream = self._get_client().responses.create(**kwargs)
 
             # The worker blocks in ``next(stream)``. Close from this waiter so
             # cancel does not wait for the next model token or inactivity timeout.
