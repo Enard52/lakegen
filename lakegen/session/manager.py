@@ -73,6 +73,7 @@ class SessionManager:
             system_prompt=_DEFAULT_SYSTEM_PROMPT,
             provider=self.config.provider,
             max_turns=_DEFAULT_MAX_TURNS,
+            base_url=self.config.base_url,
         )
 
     def pin_session(self, session_id: str, session: Session | None = None) -> None:
